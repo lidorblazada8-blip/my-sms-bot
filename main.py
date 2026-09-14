@@ -1,4 +1,4 @@
-import discord
+Import discord
 from discord import ui, app_commands
 from discord.ext import commands, tasks
 import os
@@ -140,7 +140,6 @@ async def send_unauthorized_alert(i: discord.Interaction, cmd_name: str, require
         await i.user.send(embed=dm_emb)
     except: pass
 
-
 # ==========================================
 # --- 3. חלונות קופצים (Modals) ---
 # ==========================================
@@ -225,7 +224,6 @@ class FeedbackModal(ui.Modal, title="📩 שליחת פידבק לשרת"):
         feedback_cooldown[i.user.id] = now
         await i.response.send_message("✅ הפידבק נשלח בהצלחה, תודה לך!", ephemeral=True)
 
-
 # ==========================================
 # --- 4. פאנלים קבועים ומערכת כפתורים ---
 # ==========================================
@@ -252,7 +250,7 @@ class VerifyView(ui.View):
             )
             
             link_view = ui.View()
-            link_view.add_item(ui.Button(label="🔗 כניסה לשרת הגיבוי", url=https://discord.gg/GjbHswSfgA))
+            link_view.add_item(ui.Button(label="🔗 כניסה לשרת הגיבוי", url="https://discord.gg/GjbHswSfgA"))
             return await i.response.send_message(embed=emb, view=link_view, ephemeral=True)
             
         await i.user.add_roles(role)
@@ -395,7 +393,6 @@ class HeistView(ui.View):
         select.callback = callback
         view.add_item(select)
         await i.response.send_message("בחר חבר:", view=view, ephemeral=True)
-
 
 # ==========================================
 # --- 5. קלאס הבוט ומערכת אבטחה מורחבת ---
@@ -663,7 +660,6 @@ async def on_member_update(before, after):
             embed.set_footer(text="תודה על התמיכה!!")
             await channel.send(content=after.mention, embed=embed)
 
-
 # ==========================================
 # --- 6. פקודות סטאפ ידניות ---
 # ==========================================
@@ -724,7 +720,6 @@ async def unraid(i: discord.Interaction):
         overwrite.view_channel = True
         await verify_ch.set_permissions(i.guild.default_role, overwrite=overwrite)
     await i.response.send_message("🔓 מצב ה-Raid בבוטל בהצלחה. חדר האימות נפתח מחדש!", ephemeral=True)
-
 
 # ==========================================
 # --- 7. פקודות מודרציה, ניהול וכלכלה ---
