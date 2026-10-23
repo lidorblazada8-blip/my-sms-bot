@@ -16,15 +16,14 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 FIREBASE_URL = os.getenv('FIREBASE_URL')
 
 MY_USER_ID = 1130542850883469443
-JAIL_STAFF_ROLE_ID = 1501959601405427902
 ADMIN_ACCESS_ROLE_ID = 1499868525844627478
 
 # רשימת ה-IDs המורשים לעקוף את כל החסימות והפקודות (Owners)
 OWNER_IDS = [1493293951959044147, 1130542850883469443, 1483411120961093642]
 
-# הגדרות שרת הגיבוי המעודכנות
+# הגדרות שרת הגיבוי
 BACKUP_GUILD_ID = 1533515085455032440  
-BACKUP_INVITE_URL = "https://discord.gg/AgexBXpmxe"
+BACKUP_INVITE_URL = "https://discord.gg/ZZan9bXPnV"
 
 CHANNELS = {
     "FEEDBACK": 1505632543066689686,        
@@ -45,10 +44,7 @@ ROLES = {
     "VERIFIED": 1501316672345211041
 }
 
-daily_cooldown = {}   
-work_cooldown = {}    
 feedback_cooldown = {} 
-
 spam_tracker = {}
 join_tracker = []
 raid_mode_active = False
@@ -91,37 +87,6 @@ def get_all_balances():
     except:
         return {}
 
-def get_jail_list_from_db():
-    try:
-        ref = db.reference('jail')
-        res = ref.get()
-        if not res: return {}
-        now = datetime.now()
-        return {int(uid): datetime.fromisoformat(t) for uid, t in res.items() if datetime.fromisoformat(t) > now}
-    except:
-        return {}
-
-def add_to_jail_db(user_id, release_time):
-    try:
-        ref = db.reference(f'jail/{user_id}')
-        ref.set(release_time.isoformat())
-    except:
-        pass
-
-def remove_from_jail_db(user_id):
-    try:
-        ref = db.reference(f'jail/{user_id}')
-        ref.delete()
-    except:
-        pass
-
-def is_owner_or_jail_staff(i: discord.Interaction):
-    if i.user.id in OWNER_IDS: return True
-    admin_role = i.guild.get_role(ADMIN_ACCESS_ROLE_ID)
-    if admin_role in i.user.roles: return True
-    role = i.guild.get_role(JAIL_STAFF_ROLE_ID)
-    return role in i.user.roles
-
 def has_owner_or_admin_permission(i: discord.Interaction):
     if i.user.id in OWNER_IDS: return True
     admin_role = i.guild.get_role(ADMIN_ACCESS_ROLE_ID)
@@ -143,35 +108,6 @@ async def send_unauthorized_alert(i: discord.Interaction, cmd_name: str, require
 # ==========================================
 # --- 3. חלונות קופצים (Modals) ---
 # ==========================================
-class BankHeistModal(ui.Modal, title="🏦 תכנון שוד הבנק הגדול"):
-    amount_input = ui.TextInput(label="כמה כסף ברצונך לשדוד? (1 - 7,000)", placeholder="למשל: 5000", max_length=4)
-    
-    async def on_submit(self, i: discord.Interaction):
-        jail_list = get_jail_list_from_db()
-        if i.user.id in jail_list: 
-            return await i.response.send_message("❌ אתה בכלא, אי אפשר לבצע פשעים!", ephemeral=True)
-        try:
-            amt = int(self.amount_input.value)
-        except ValueError:
-            return await i.response.send_message("❌ נא להזין מספר שלם ותקין בלבד!", ephemeral=True)
-        if amt < 1 or amt > 7000:
-            return await i.response.send_message("❌ סכום השוד חייב להיות בין 1 ל-7,000 שקלים בלבד!", ephemeral=True)
-            
-        await i.response.defer(ephemeral=True)
-        await asyncio.sleep(2)
-        
-        success_chance = 1.0 - (amt / 8750)
-        chance_pct = int(success_chance * 100)
-        
-        if random.random() < success_chance:
-            current_bal = get_user_data(i.user.id, 'balance', 0)
-            set_user_data(i.user.id, 'balance', current_bal + amt)
-            await i.followup.send(f"✅ **השוד הצליח!** פוצצת את הכספת וברחת מהזירה.\n💰 **סכום שבחרת לשדוד:** ₪{amt:,}\n📉 **סיכוי ההצלחה שלך היה:** `{chance_pct}%`", ephemeral=True)
-        else:
-            release_time = datetime.now() + timedelta(hours=2)
-            add_to_jail_db(i.user.id, release_time)
-            await i.followup.send(f"❌ **השוד נכשל!** היית חמדן מדי, האזעקה השקטה הופעלה ונשלחת לכלא לשעתיים.\n💰 **סכום שניסית לשדוד:** ₪{amt:,}\n📉 **סיכוי ההצלחה שלך היה:** `{chance_pct}%`", ephemeral=True)
-
 class SuggestionModal(ui.Modal, title="💡 הצעה חדשה לשיפור"):
     suggestion = ui.TextInput(label="מה ההצעה שלך?", style=discord.TextStyle.paragraph)
     
@@ -242,6 +178,14 @@ class VerifyView(ui.View):
             
         backup_member = backup_guild.get_member(i.user.id)
         if not backup_member:
+            try:
+                backup_member = await backup_guild.fetch_member(i.user.id)
+            except discord.NotFound:
+                backup_member = None
+            except Exception:
+                backup_member = None
+
+        if not backup_member:
             emb = discord.Embed(
                 title="🔒 אימות נכשל - חסר שלב חובה!",
                 description=f"שלום {i.user.mention},\nבשביל להשלים את תהליך האימות בשרת, **אתה חייב להיות חבר גם בשרת הגיבוי שלנו**.\n\nאנא כנס לשרת מהכפתור למטה ולאחר מכן לחץ שוב על כפתור האימות!",
@@ -250,149 +194,11 @@ class VerifyView(ui.View):
             )
             
             link_view = ui.View()
-            link_view.add_item(ui.Button(label="🔗 כניסה לשרת הגיבוי", url="https://discord.gg/H8VtdGAyH6"))
+            link_view.add_item(ui.Button(label="🔗 כניסה לשרת הגיבוי", url=BACKUP_INVITE_URL))
             return await i.response.send_message(embed=emb, view=link_view, ephemeral=True)
             
         await i.user.add_roles(role)
         await i.response.send_message("🎉 אומתת בהצלחה (נמצאת גם בשרת הגיבוי)! ברוך הבא לשרת.", ephemeral=True)
-
-class ShopView(ui.View):
-    def __init__(self): super().__init__(timeout=None)
-        
-    @ui.button(label="💰 בדיקת יתרה (Bal)", style=discord.ButtonStyle.primary, custom_id="sh_bal", row=0)
-    async def check_bal(self, i: discord.Interaction, b: ui.Button): 
-        bal = get_user_data(i.user.id, 'balance', 0)
-        await i.response.send_message(f"💰 היתרה הנוכחית שלך עומדת על: **₪{bal:,}**", ephemeral=True)
-
-    @ui.button(label="🛠️ צא לעבודה (Work)", style=discord.ButtonStyle.primary, custom_id="sh_work", row=0)
-    async def do_work(self, i: discord.Interaction, b: ui.Button):
-        now = datetime.now()
-        last = work_cooldown.get(i.user.id)
-        if last and now < last + timedelta(minutes=10) and i.user.id not in OWNER_IDS:
-            diff = (last + timedelta(minutes=10)) - now
-            return await i.response.send_message(f"❌ חזור בעוד {diff.seconds // 60} דקות ו-{diff.seconds % 60} שניות.", ephemeral=True)
-        amt = random.randint(200, 600)
-        current_bal = get_user_data(i.user.id, 'balance', 0)
-        set_user_data(i.user.id, 'balance', current_bal + amt)
-        work_cooldown[i.user.id] = now
-        jobs = ["מתכנת בוטים 💻", "ברמן במועדון 🍹", "נהג מונית 🚖", "מאבטח קניון 👮"]
-        await i.response.send_message(f"🛠️ עבדת בתור **{random.choice(jobs)}** והרווחת **₪{amt}**!", ephemeral=True)
-
-    @ui.button(label="קנה Supporter 🎗️", style=discord.ButtonStyle.secondary, custom_id="sh_supp", row=1)
-    async def buy_supp(self, i: discord.Interaction, b: ui.Button): 
-        await self.process_purchase(i, 2000, ROLES["SUPPORTER"], "Supporter")
-        
-    @ui.button(label="קנה VIP 💎", style=discord.ButtonStyle.secondary, custom_id="sh_vip", row=1)
-    async def buy_vip(self, i: discord.Interaction, b: ui.Button): 
-        await self.process_purchase(i, 5000, ROLES["VIP"], "VIP")
-    
-    @ui.button(label="🎁 פרס יומי (Daily)", style=discord.ButtonStyle.success, custom_id="sh_daily", row=2)
-    async def claim_daily(self, i: discord.Interaction, b: ui.Button):
-        now = datetime.now()
-        last = daily_cooldown.get(i.user.id)
-        if last and now < last + timedelta(days=1) and i.user.id not in OWNER_IDS:
-            diff = (last + timedelta(days=1)) - now
-            hours, remainder = divmod(diff.seconds, 3600)
-            minutes = remainder // 60
-            return await i.response.send_message(f"❌ חזור בעוד {hours} שעות ו-{minutes} דקות.", ephemeral=True)
-        amt = random.randint(500, 1500)
-        current_bal = get_user_data(i.user.id, 'balance', 0)
-        set_user_data(i.user.id, 'balance', current_bal + amt)
-        daily_cooldown[i.user.id] = now
-        await i.response.send_message(f"💰 אספת בהצלחה ₪{amt} לחשבון הבנק שלך!", ephemeral=True)
-
-    async def process_purchase(self, i: discord.Interaction, price, role_id, role_name):
-        bal = get_user_data(i.user.id, 'balance', 0)
-        if bal < price: 
-            return await i.response.send_message(f"❌ חסר לך ₪{price - bal} בשביל הרול!", ephemeral=True)
-        role = i.guild.get_role(role_id)
-        if role in i.user.roles: 
-            return await i.response.send_message("❌ כבר יש לך את הרול הזה!", ephemeral=True)
-        set_user_data(i.user.id, 'balance', bal - price)
-        await i.user.add_roles(role)
-        await i.response.send_message(f"✅ הרכישה הצליחה! קיבלת את הרול {role_name}.", ephemeral=True)
-
-class PoliceView(ui.View):
-    def __init__(self, robber):
-        super().__init__(timeout=10)
-        self.robber = robber
-        self.called = False
-        
-    @ui.button(label="🚨 התקשר למשטרה! (10 שניות)", style=discord.ButtonStyle.danger, custom_id="p_call")
-    async def call_police(self, i: discord.Interaction, b: ui.Button):
-        self.called = True
-        self.stop()
-        release_time = datetime.now() + timedelta(hours=2)
-        add_to_jail_db(self.robber.id, release_time)
-        await i.response.send_message("📞 המשטרה בדרך! השודד נתפס וננעל בכלא לשעתיים.", ephemeral=True)
-        try: await self.robber.send("🚨 נתפסת על חם! הקורבן קרא למשטרה והוכנסת לכלא.")
-        except: pass
-
-class HeistView(ui.View):
-    def __init__(self): super().__init__(timeout=None)
-        
-    @ui.button(label="👤 שדוד משתמש (Rob)", style=discord.ButtonStyle.secondary, custom_id="he_user")
-    async def rob_user(self, i: discord.Interaction, b: ui.Button):
-        jail_list = get_jail_list_from_db()
-        if i.user.id in jail_list: 
-            return await i.response.send_message("❌ אתה בכלא, אי אפשר לבצע פשעים!", ephemeral=True)
-        view = ui.View()
-        select = ui.UserSelect(placeholder="בחר את השחקן שברצונך לשדוד...")
-        
-        async def callback(inter: discord.Interaction):
-            select.disabled = True
-            await inter.message.edit(view=view)
-            target = select.values[0]
-            current_jail = get_jail_list_from_db()
-            if target.id == inter.user.id: return await inter.response.send_message("❌ פדיחה, אי אפשר לשדוד את עצמך.", ephemeral=True)
-            if target.id in current_jail: return await inter.response.send_message("❌ הקורבן בכלא!", ephemeral=True)
-            
-            p_view = PoliceView(inter.user)
-            await self.inter_call_police_setup(inter, target, p_view)
-                    
-        select.callback = callback
-        view.add_item(select)
-        await i.response.send_message("בחר קורבן:", view=view, ephemeral=True)
-
-    async def inter_call_police_setup(self, inter, target, p_view):
-        await inter.response.send_message(f"🔫 השוד התחיל! שלחנו הודעה חשאית ל-{target.name}. יש לו 10 שניות להזעיק משטרה!", ephemeral=True)
-        try: await target.send(f"⚠️ **ניסיון שוד!** המשתמש {inter.user.name} מנסה לשדוד אותך! לחץ מהר:", view=p_view)
-        except: return await inter.followup.send("❌ לא ניתן לשדוד משתמש זה (פרטי חסום).", ephemeral=True)
-        
-        await asyncio.sleep(10)
-        if not p_view.called:
-            target_bal = get_user_data(target.id, 'balance', 0)
-            if target_bal <= 0: return await inter.followup.send("❌ השוד נכשל! הקורבן תפרן.", ephemeral=True)
-            loot = random.randint(1000, min(3000, target_bal))
-            set_user_data(inter.user.id, 'balance', get_user_data(inter.user.id, 'balance', 0) + loot)
-            set_user_data(target.id, 'balance', target_bal - loot)
-            await inter.followup.send(f"💰 השוד הצליח! גנבת מ- {target.name} סכום של ₪{loot}!", ephemeral=True)
-
-    @ui.button(label="🏦 שוד בנק (Bank Heist)", style=discord.ButtonStyle.danger, custom_id="he_bank")
-    async def rob_bank(self, i: discord.Interaction, b: ui.Button):
-        if i.user.id in get_jail_list_from_db(): return await i.response.send_message("❌ אתה בכלא!", ephemeral=True)
-        await i.response.send_modal(BankHeistModal())
-
-    @ui.button(label="🔓 שחרור בערבות (₪5,000)", style=discord.ButtonStyle.success, custom_id="he_bail")
-    async def bail_friend(self, i: discord.Interaction, b: ui.Button):
-        my_bal = get_user_data(i.user.id, 'balance', 0)
-        if my_bal < 5000: return await i.response.send_message("❌ אין לך ₪5,000!", ephemeral=True)
-        view = ui.View()
-        select = ui.UserSelect(placeholder="בחר חבר לשחרור...")
-        
-        async def callback(select_inter: discord.Interaction):
-            select.disabled = True
-            await select_inter.message.edit(view=view)
-            friend = select.values[0]
-            if friend.id in get_jail_list_from_db():
-                remove_from_jail_db(friend.id)
-                set_user_data(i.user.id, 'balance', my_bal - 5000)
-                await select_inter.response.send_message(f"🔓 שילמת ערבות! {friend.mention} שוחרר מהכלא.")
-            else: await select_inter.response.send_message("❌ הוא לא בכלא.", ephemeral=True)
-                
-        select.callback = callback
-        view.add_item(select)
-        await i.response.send_message("בחר חבר:", view=view, ephemeral=True)
 
 # ==========================================
 # --- 5. קלאס הבוט ומערכת אבטחה מורחבת ---
@@ -403,8 +209,6 @@ class CyberMasterBot(commands.Bot):
         self.invites = {} 
 
     async def setup_hook(self):
-        self.add_view(ShopView())
-        self.add_view(HeistView())
         self.add_view(VerifyView())
         
         inline_view = ui.View(timeout=None)
@@ -427,7 +231,6 @@ class CyberMasterBot(commands.Bot):
             if interaction.type in (discord.InteractionType.component, discord.InteractionType.modal_submit):
                 return True
                 
-            # הגנה קשוחה על פקודות סלאש (Slash Commands) בלבד - בודק אם המשתמש ברשימת ה-Owners
             if interaction.user.id in OWNER_IDS:
                 return True
                 
@@ -437,15 +240,8 @@ class CyberMasterBot(commands.Bot):
                 
             return False
 
-        self.jail_loop.start()
         self.lb_loop.start()
         await self.tree.sync()
-
-    @tasks.loop(seconds=30)
-    async def jail_loop(self):
-        now = datetime.now()
-        for uid, release_time in list(get_jail_list_from_db().items()):
-            if now >= release_time: remove_from_jail_db(uid)
 
     @tasks.loop(minutes=5)
     async def lb_loop(self):
@@ -481,16 +277,10 @@ async def on_message(message: discord.Message):
 
     # --- 🔒 מערכת ANTI-LINK מורחבת והרמטית (כולל חסימת רווחים ומעקפים) ---
     if user_id not in OWNER_IDS:
-        # 1. מנקים מהטקסט לחלוטין את כל סוגי הרווחים והתווים המיוחדים שיכולים לשמש כמעקף
         cleaned_content = re.sub(r'[\s\_\-\*\\\/\.\,\?\!\|\]\[\)\(\}\:\;\d]+', '', message.content).lower()
-        
-        # 2. תבניות מפתח שאסור שיעברו בשום צורה
         bypass_patterns = ["discordgg", "http", "https", "www", ".gg", "discord.com/invite"]
-        
-        # 3. רגקס רגיל לזיהוי קישורים סטנדרטיים
         normal_link_pattern = r"(https?://[^\s]+|discord\.gg/[^\s]+|www\.[^\s]+)"
         
-        # בדיקה האם קישור רגיל זוהה, או שאחד מהביטויים הנקיים מופיע בטקסט המשובש שחובר
         is_link_detected = re.search(normal_link_pattern, message.content, re.IGNORECASE) or any(p in cleaned_content for p in bypass_patterns)
 
         if is_link_detected:
@@ -587,8 +377,6 @@ async def on_member_join(member: discord.Member):
         now_utc = datetime.now(member.created_at.tzinfo)
         account_age = now_utc - member.created_at
         
-        print(f"🔍 [Anti-Alt Check] משתמש נכנס: {member.name} | וותק: {account_age.days} ימים")
-        
         if account_age < timedelta(days=10):
             alt_ch = member.guild.get_channel(CHANNELS["ANTI_ALT"])
             if not alt_ch: alt_ch = await bot.fetch_channel(CHANNELS["ANTI_ALT"])
@@ -597,13 +385,9 @@ async def on_member_join(member: discord.Member):
                 emb_alt = discord.Embed(title="התרעת משתמש חשוד (Anti-Alt) 🚨", color=0xffa500, timestamp=datetime.now())
                 emb_alt.add_field(name="המשתמש:", value=f"{member.mention}\n({member.name})", inline=False)
                 emb_alt.add_field(name="וותק חשבון:", value=f"{account_age.days} ימים", inline=False)
-                
                 await alt_ch.send(embed=emb_alt)
-                print(f"✅ [Anti-Alt Log] אימבד אלט נשלח בהצלחה לחדר עבור {member.name}")
-            else:
-                print(f"❌ [Anti-Alt Log] שגיאה: לא נמצא ערוץ אלט תקני!")
     except Exception as e:
-        print(f"❌ [Anti-Alt Error] קריסה במערכת זיהוי אלט: {e}")
+        print(f"❌ [Anti-Alt Error]: {e}")
 
     # --- 🕒 מערכת בדיקת כניסה חוזרת (Rejoin Log) ---
     left_at_str = get_user_data(member.id, 'left_at', 0)
@@ -640,7 +424,7 @@ async def on_member_join(member: discord.Member):
     except: pass
 
     if welcome_ch and not raid_mode_active:
-        emb_welcome = discord.Embed(title="👋 ברוך הבא לשרת!", description=f"ברוך הבאה לשרת ספאמר הכי טוב בארץ מקווה שתהנו", color=0x00ff00, timestamp=now)
+        emb_welcome = discord.Embed(title="👋 ברוך הבא לשרת!", description=f"ברוך הבא לשרת! מקווה שתהנה", color=0x00ff00, timestamp=now)
         emb_welcome.set_thumbnail(url=member.display_avatar.url)
         await welcome_ch.send(embed=emb_welcome)
 
@@ -663,26 +447,6 @@ async def on_member_update(before, after):
 # ==========================================
 # --- 6. פקודות סטאפ ידניות ---
 # ==========================================
-@bot.tree.command(name="setup_shop", description="[מנהל/אונר] מקים את פאנל החנות.")
-async def s_shop(i: discord.Interaction):
-    emb = discord.Embed(title="═💠 CYBER-STORE MARKET 💠═", description="נהל את הבנק שלך, צא לעבוד ורכוש הטבות ורולים מיוחדים!", color=0x2b2d31)
-    await i.channel.send(embed=emb, view=ShopView())
-    await i.response.send_message("✅ פאנל חנות הוקם!", ephemeral=True)
-
-@bot.tree.command(name="setup_leaderboard", description="[מנהל/אונר] מקים את טבלת העשירים.")
-async def s_leaderboard(i: discord.Interaction):
-    emb = discord.Embed(title="🏆 טבלת עשירים - Cyber Economy", description="הטבלה בטעינה, תתעדכן אוטומטית בעוד מספר רגעים...", color=0xffd700, timestamp=datetime.now())
-    msg = await i.channel.send(embed=emb)
-    leaderboard_config["channel_id"] = i.channel.id
-    leaderboard_config["message_id"] = msg.id
-    await i.response.send_message("✅ ליידרבורד הוקם ויועבר לעדכון אוטומטי!", ephemeral=True)
-
-@bot.tree.command(name="setup_heist", description="[מנהל/אונר] מקים את פאנל השודים ועולם הפשע.")
-async def s_heist(i: discord.Interaction):
-    emb = discord.Embed(title="🔫 עולם הפשע והחוק - Heist Panel", description="בצע שודים, פוצץ את כספות הבנק או שחרר חברים מהכלא בערבות כספית!", color=0x000000)
-    await i.channel.send(embed=emb, view=HeistView())
-    await i.response.send_message("✅ פאנל שודים הוקם בהצלחה!", ephemeral=True)
-
 @bot.tree.command(name="setup_tickets", description="[מנהל/אונר] פאנל דיווחים והצעות.")
 async def s_tickets(i: discord.Interaction):
     v = ui.View(timeout=None)
@@ -719,10 +483,10 @@ async def unraid(i: discord.Interaction):
         overwrite.send_messages = None
         overwrite.view_channel = True
         await verify_ch.set_permissions(i.guild.default_role, overwrite=overwrite)
-    await i.response.send_message("🔓 מצב ה-Raid בבוטל בהצלחה. חדר האימות נפתח מחדש!", ephemeral=True)
+    await i.response.send_message("🔓 מצב ה-Raid בוטל בהצלחה. חדר האימות נפתח מחדש!", ephemeral=True)
 
 # ==========================================
-# --- 7. פקודות מודרציה, ניהול וכלכלה ---
+# --- 7. פקודות מודרציה וניהול ---
 # ==========================================
 
 @bot.tree.command(name="account_age", description="[כללי] בודק לפני כמה ימים נוצר החשבון של המשתמש.")
@@ -731,27 +495,6 @@ async def account_age_cmd(i: discord.Interaction, member: discord.Member = None)
     now_utc = datetime.now(target_member.created_at.tzinfo)
     diff = now_utc - target_member.created_at
     await i.response.send_message(f"📅 החשבון של {target_member.mention} נוצר לפני **{diff.days:,}** ימים!")
-
-@bot.tree.command(name="pay", description="[כללי] העבר סכום כסף מחשבונך האישי ישירות לחשבון של חבר.")
-async def pay(i: discord.Interaction, to: discord.Member, amount: int):
-    if amount <= 0: return await i.response.send_message("❌ נא להזין סכום תקין הגבוה מ-0.", ephemeral=True)
-    my_bal = get_user_data(i.user.id, 'balance', 0)
-    if my_bal < amount: return await i.response.send_message(f"❌ העברה נכשלה! חסר לך ₪{amount - my_bal}.", ephemeral=True)
-    set_user_data(i.user.id, 'balance', my_bal - amount)
-    set_user_data(to.id, 'balance', get_user_data(to.id, 'balance', 0) + amount)
-    await i.response.send_message(f"💸 העברת בהצלחה סכום של **₪{amount:,}** לחשבון של {to.mention}!")
-
-@bot.tree.command(name="jail_add", description="[צוות כלא/מנהל/אונר] שולח משתמש לכלא לשעתיים.")
-async def jail_add(i: discord.Interaction, member: discord.Member):
-    add_to_jail_db(member.id, datetime.now() + timedelta(hours=2))
-    await i.response.send_message(f"✅ 🔒 המשתמש {member.mention} ננעל בתוך הכלא למשך שעתיים.")
-
-@bot.tree.command(name="jail_remove", description="[צוות כלא/מנהל/אונר] משחרר משתמש מהכלא.")
-async def jail_remove(i: discord.Interaction, member: discord.Member):
-    if member.id in get_jail_list_from_db(): 
-        remove_from_jail_db(member.id)
-        await i.response.send_message(f"✅ 🔓 המשתמש {member.mention} שוחרר מהכלא.")
-    else: await i.response.send_message("❌ המשתמש אינו בכלא.", ephemeral=True)
 
 @bot.tree.command(name="warn", description="[מנהל/אונר] נותן אזהרה למשתמש.")
 async def warn(i: discord.Interaction, member: discord.Member, reason: str):
