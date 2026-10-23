@@ -250,7 +250,7 @@ class VerifyView(ui.View):
             )
             
             link_view = ui.View()
-            link_view.add_item(ui.Button(label="🔗 כניסה לשרת הגיבוי", url="https://discord.gg/GjbHswSfgA"))
+            link_view.add_item(ui.Button(label="🔗 כניסה לשרת הגיבוי", url="https://discord.gg/H8VtdGAyH6"))
             return await i.response.send_message(embed=emb, view=link_view, ephemeral=True)
             
         await i.user.add_roles(role)
